@@ -66,7 +66,7 @@ cd funpay-parser
 2. **Run the parser:**
 
     ```bash
-    node parser_en.js
+    node parser.js
     ```
 
 3. **Follow the prompts:**
