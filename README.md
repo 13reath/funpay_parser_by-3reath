@@ -1,4 +1,4 @@
-# FunPay Parser for /en/ links
+# FunPay Parser for /en/ links NOT FINISHED
 
 Anonymous FunPay profile parser with Tor support. Extracts offer data in English.
 
