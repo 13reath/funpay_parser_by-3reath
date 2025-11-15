@@ -116,76 +116,258 @@ async function clearPageData(page: Page) {
     });
 }
 
+async function setLanguageAndCurrency(
+    page: Page,
+    language: 'ru' | 'en',
+    currency: 'RUB' | 'EUR' | 'USD' = 'EUR'
+) {
+    try {
+        console.log(`  Setting language to ${language.toUpperCase()} and currency to ${currency}`);
+
+        // Ждем загрузки дропдаунов
+        await page.waitForSelector('li.dropdown', { timeout: 5000 });
+
+        // === РАБОТА С ЯЗЫКОМ ===
+        // Находим и кликаем на дропдаун языка (первый dropdown)
+        const langDropdownClicked = await page.evaluate(() => {
+            const dropdowns = document.querySelectorAll('li.dropdown');
+            for (const dropdown of dropdowns) {
+                const toggle = dropdown.querySelector('.dropdown-toggle');
+                if (toggle) {
+                    const text = toggle.textContent || '';
+                    // Первый дропдаун обычно для языка
+                    if (
+                        text.includes('По-русски') ||
+                        text.includes('English') ||
+                        dropdown.querySelector('.menu-icon-lang-ru') ||
+                        dropdown.querySelector('.menu-icon-lang-uk')
+                    ) {
+                        (toggle as HTMLElement).click();
+                        return true;
+                    }
+                }
+            }
+            return false;
+        });
+
+        if (langDropdownClicked) {
+            await new Promise((resolve) => setTimeout(resolve, 500));
+
+            // Выбираем нужный язык из выпадающего меню
+            const languageSet = await page.evaluate((targetLang) => {
+                const dropdownMenu = document.querySelector('li.dropdown.open .dropdown-menu');
+                if (!dropdownMenu) return false;
+
+                const links = dropdownMenu.querySelectorAll('a');
+                for (const link of links) {
+                    const href = link.getAttribute('href') || '';
+                    const text = link.textContent?.trim() || '';
+
+                    // Для английского языка
+                    if (targetLang === 'en') {
+                        if (href.includes('/en/') || text.includes('English')) {
+                            (link as HTMLElement).click();
+                            return true;
+                        }
+                    }
+                    // Для русского языка
+                    else if (targetLang === 'ru') {
+                        if (
+                            !href.includes('/en/') &&
+                            (href === '/' || text.includes('По-русски'))
+                        ) {
+                            (link as HTMLElement).click();
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            }, language);
+
+            if (languageSet) {
+                console.log(`  ✓ Language set to ${language.toUpperCase()}`);
+                // Ждем перезагрузки страницы после смены языка
+                await page
+                    .waitForNavigation({ waitUntil: 'networkidle2', timeout: 10000 })
+                    .catch(() => {});
+            }
+        }
+
+        // === РАБОТА С ВАЛЮТОЙ ===
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+
+        // Находим и кликаем на дропдаун валюты (второй dropdown)
+        const currencyDropdownClicked = await page.evaluate(() => {
+            const dropdowns = document.querySelectorAll('li.dropdown');
+            for (const dropdown of dropdowns) {
+                const toggle = dropdown.querySelector('.dropdown-toggle');
+                if (toggle) {
+                    const text = toggle.textContent || '';
+                    // Проверяем что это дропдаун с валютой
+                    if (
+                        text.includes('€') ||
+                        text.includes('$') ||
+                        text.includes('₽') ||
+                        text.includes('Евро') ||
+                        text.includes('Рубль') ||
+                        dropdown.querySelector('.user-cy-switcher')
+                    ) {
+                        (toggle as HTMLElement).click();
+                        return true;
+                    }
+                }
+            }
+            return false;
+        });
+
+        if (currencyDropdownClicked) {
+            await new Promise((resolve) => setTimeout(resolve, 500));
+
+            // Выбираем нужную валюту
+            const currencySet = await page.evaluate((targetCurrency) => {
+                const dropdownMenu = document.querySelector('li.dropdown.open .dropdown-menu');
+                if (!dropdownMenu) return false;
+
+                const links = dropdownMenu.querySelectorAll('a');
+                for (const link of links) {
+                    const text = link.textContent?.trim() || '';
+
+                    if (
+                        (targetCurrency === 'EUR' && text.includes('Евро')) ||
+                        (targetCurrency === 'USD' && text.includes('Доллар')) ||
+                        (targetCurrency === 'RUB' && text.includes('Рубль'))
+                    ) {
+                        (link as HTMLElement).click();
+                        return true;
+                    }
+                }
+                return false;
+            }, currency);
+
+            if (currencySet) {
+                console.log(`  ✓ Currency set to ${currency}`);
+                await new Promise((resolve) => setTimeout(resolve, 1000));
+            }
+        }
+    } catch (error: any) {
+        console.log(`  ⚠ Could not set language/currency: ${error.message}`);
+    }
+}
+
+// Альтернативный метод через прямые селекторы
+async function setLanguageAndCurrencyDirect(
+    page: Page,
+    language: 'ru' | 'en',
+    currency: 'RUB' | 'EUR' | 'USD' = 'EUR'
+) {
+    try {
+        // Для языка - кликаем напрямую по ссылке в дропдауне
+        await page.evaluate((lang) => {
+            // Находим все дропдауны
+            const dropdowns = document.querySelectorAll('li.dropdown');
+
+            // Первый дропдаун - язык
+            if (dropdowns[0]) {
+                const toggle = dropdowns[0].querySelector('.dropdown-toggle') as HTMLElement;
+                if (toggle) toggle.click();
+
+                setTimeout(() => {
+                    const menu = dropdowns[0].querySelector('.dropdown-menu');
+                    if (menu) {
+                        const links = menu.querySelectorAll('a');
+                        links.forEach((link) => {
+                            const href = link.getAttribute('href') || '';
+                            if (lang === 'en' && href.includes('/en/')) {
+                                (link as HTMLElement).click();
+                            } else if (lang === 'ru' && !href.includes('/en/')) {
+                                (link as HTMLElement).click();
+                            }
+                        });
+                    }
+                }, 300);
+            }
+        }, language);
+
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+
+        // Для валюты
+        await page.evaluate((curr) => {
+            const dropdowns = document.querySelectorAll('li.dropdown');
+
+            // Второй дропдаун - валюта (или ищем по классу)
+            const currencyDropdown = Array.from(dropdowns).find(
+                (d) =>
+                    d.innerHTML.includes('user-cy-switcher') ||
+                    d.textContent?.includes('€') ||
+                    d.textContent?.includes('Евро')
+            );
+
+            if (currencyDropdown) {
+                const toggle = currencyDropdown.querySelector('.dropdown-toggle') as HTMLElement;
+                if (toggle) toggle.click();
+
+                setTimeout(() => {
+                    const menu = currencyDropdown.querySelector('.dropdown-menu');
+                    if (menu) {
+                        const links = menu.querySelectorAll('a');
+                        links.forEach((link) => {
+                            const text = link.textContent || '';
+                            if (
+                                (curr === 'EUR' && text.includes('Евро')) ||
+                                (curr === 'USD' && text.includes('Доллар')) ||
+                                (curr === 'RUB' && text.includes('Рубль'))
+                            ) {
+                                (link as HTMLElement).click();
+                            }
+                        });
+                    }
+                }, 300);
+            }
+        }, currency);
+
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+    } catch (error: any) {
+        console.log(`  ⚠ Direct method failed: ${error.message}`);
+    }
+}
+
 async function parseOfferLocale(
     page: Page,
     offerId: string,
-    locale: 'ru' | 'en'
+    locale: 'ru' | 'en',
+    currency: 'RUB' | 'EUR' | 'USD' = 'EUR'
 ): Promise<OfferData> {
-    // Очищаем все данные перед загрузкой
+    // Очищаем данные
     await clearPageData(page);
 
-    // Устанавливаем заголовки в зависимости от языка
-    if (locale === 'en') {
-        await page.setExtraHTTPHeaders({
-            'Accept-Language': 'en-US,en;q=0.9',
-        });
-    } else {
-        await page.setExtraHTTPHeaders({
-            'Accept-Language': 'ru-RU,ru;q=0.9',
-        });
-    }
-
-    // Формируем URL в зависимости от языка
-    const url =
-        locale === 'en'
-            ? `https://funpay.com/en/lots/offer?id=${offerId}`
-            : `https://funpay.com/lots/offer?id=${offerId}`;
-
-    console.log(`  [${locale.toUpperCase()}] ${url}`);
-
     // Переходим на страницу
+    const url = `https://funpay.com/lots/offer?id=${offerId}`;
+    console.log(`  [${locale.toUpperCase()}] ${url}`);
     await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
+
+    // Устанавливаем язык и валюту
+    await setLanguageAndCurrency(page, locale, currency);
+
+    // Ждем обновления контента
     await new Promise((resolve) => setTimeout(resolve, 2000));
 
-    // Проверяем и принудительно переключаем язык если нужно
-    const languageSwitched = await page.evaluate((targetLocale) => {
-        // Проверяем текущий язык по URL или контенту
-        const isEnglish = window.location.pathname.startsWith('/en');
-        const needEnglish = targetLocale === 'en';
-
-        if (needEnglish !== isEnglish) {
-            // Ищем переключатель языка
-            const links = document.querySelectorAll('a');
-            for (const link of links) {
-                const href = link.getAttribute('href') || '';
-
-                // Для переключения на английский
-                if (needEnglish && (href.includes('/en/') || href === '/en')) {
-                    (link as HTMLElement).click();
-                    return true;
-                }
-
-                // Для переключения на русский
-                if (
-                    !needEnglish &&
-                    !href.includes('/en/') &&
-                    (href === '/' || href.includes('/ru'))
-                ) {
-                    (link as HTMLElement).click();
-                    return true;
-                }
-            }
+    // Проверяем что язык установился правильно
+    const isCorrectLanguage = await page.evaluate((expectedLang) => {
+        const bodyText = document.body.textContent || '';
+        if (expectedLang === 'en') {
+            return bodyText.includes('Description') || bodyText.includes('Price');
+        } else {
+            return bodyText.includes('Описание') || bodyText.includes('Цена');
         }
-        return false;
     }, locale);
 
-    // Если язык был переключен, ждем загрузки
-    if (languageSwitched) {
-        await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 });
+    if (!isCorrectLanguage) {
+        console.log(`  Retrying language switch with direct method...`);
+        await setLanguageAndCurrencyDirect(page, locale, currency);
         await new Promise((resolve) => setTimeout(resolve, 2000));
     }
 
-    // Обработка селекта если есть
+    // Обработка select если есть
     try {
         const selectExists = await page.$('select');
         if (selectExists) {
@@ -235,6 +417,7 @@ async function parseOfferLocale(
             }
         });
 
+        // Ищем цену
         const allElements = document.querySelectorAll('*');
         for (let el of allElements) {
             const text = el.textContent?.trim() || '';
@@ -246,23 +429,26 @@ async function parseOfferLocale(
         return result;
     });
 
+    // Форматируем данные
     data.description = data.description.replace(/\s+/g, ' ').trim();
     if (data.price) {
         const priceMatch = data.price.match(/[\d.,]+\s*[₽€$]/);
         if (priceMatch) data.price = priceMatch[0];
     }
 
-    console.log(`  [${locale.toUpperCase()}] ${data.title.substring(0, 40)} | ${data.price}`);
+    console.log(`  [${locale.toUpperCase()}] ✓ ${data.title.substring(0, 40)} | ${data.price}`);
     return data;
 }
 
 async function parseOffer(pageRu: Page, pageEn: Page, offerId: string): Promise<ParsedOffer> {
     console.log(`\n=== Offer ID: ${offerId} ===`);
 
-    const ru = await parseOfferLocale(pageRu, offerId, 'ru');
+    // Парсим русскую версию с рублями
+    const ru = await parseOfferLocale(pageRu, offerId, 'ru', 'RUB');
     await new Promise((resolve) => setTimeout(resolve, 1000));
 
-    const en = await parseOfferLocale(pageEn, offerId, 'en');
+    // Парсим английскую версию с евро
+    const en = await parseOfferLocale(pageEn, offerId, 'en', 'EUR');
 
     return {
         link: `https://funpay.com/lots/offer?id=${offerId}`,
@@ -345,6 +531,7 @@ async function parseFunpay(url: string, categoryFilter: string | null = null) {
         console.log(`[EN Browser] Loading: ${urlEn}`);
         await pageEn.goto(urlEn, { waitUntil: 'networkidle2', timeout: 60000 });
 
+        // Собираем офферы с русской страницы
         const offerData = await pageRu.evaluate((filter: string | null) => {
             const data = { offerIds: [] as string[], availableCategories: [] as string[] };
             const offerBlocks = document.querySelectorAll('.offer');
@@ -370,69 +557,97 @@ async function parseFunpay(url: string, categoryFilter: string | null = null) {
 
         if (offerData.offerIds.length === 0) {
             console.log('No offers found!');
-            console.log('Available:', offerData.availableCategories.join(', '));
+            console.log('Available categories:', offerData.availableCategories.join(', '));
             return { success: false };
         }
 
         console.log(`Found ${offerData.offerIds.length} offers`);
+        console.log('Starting to parse offers with language and currency switching...\n');
 
         const parsedOffers: ParsedOffer[] = [];
         for (let i = 0; i < offerData.offerIds.length; i++) {
-            console.log(`\n[${i + 1}/${offerData.offerIds.length}]`);
+            console.log(`[${i + 1}/${offerData.offerIds.length}]`);
             const offer = await parseOffer(pageRu, pageEn, offerData.offerIds[i]);
             parsedOffers.push(offer);
-            await new Promise((resolve) => setTimeout(resolve, 1000));
+
+            // Задержка между офферами
+            if (i < offerData.offerIds.length - 1) {
+                await new Promise((resolve) => setTimeout(resolve, 1500));
+            }
         }
 
+        // Сохраняем результаты
         const timestamp = new Date().toISOString().split('T')[0];
         const category = categoryFilter || 'all';
         const fileName = `Parser_${category}_${timestamp}.json`;
         const filePath = path.join(RESULTS_DIR, fileName);
 
-        fs.writeFileSync(filePath, JSON.stringify(parsedOffers, null, 2));
-        console.log(`\n✅ Saved: ${filePath}`);
+        fs.writeFileSync(filePath, JSON.stringify(parsedOffers, null, 2), 'utf-8');
+        console.log(`\n✅ Results saved to: ${filePath}`);
+        console.log(`Total offers parsed: ${parsedOffers.length}`);
 
         return { success: true, filePath, count: parsedOffers.length };
     } catch (error: any) {
-        console.error('Error:', error.message);
-        return { success: false };
+        console.error('Error during parsing:', error.message);
+        return { success: false, error: error.message };
     } finally {
+        console.log('\nCleaning up...');
         if (browserRu) await browserRu.close();
         if (browserEn) await browserEn.close();
-        if (torProcess) torProcess.kill();
+        if (torProcess) {
+            torProcess.kill();
+            console.log('Tor Browser closed');
+        }
     }
 }
 
+// Интерактивный интерфейс командной строки
 const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
 });
 
 function prompt() {
-    rl.question('FunPay URL (or "exit"): ', async (url) => {
+    rl.question('\nEnter FunPay profile URL (or "exit" to quit): ', async (url) => {
         if (url.toLowerCase() === 'exit') {
+            console.log('Goodbye!');
             rl.close();
             return;
         }
 
         if (!url.includes('funpay.com/users/') && !url.includes('funpay.com/en/users/')) {
-            console.log('Invalid URL!');
+            console.log('❌ Invalid URL! Please provide a valid FunPay profile URL.');
+            console.log('Example: https://funpay.com/users/12345678/');
             prompt();
             return;
         }
 
-        rl.question('Category filter (or Enter for all): ', async (category) => {
+        rl.question('Category filter (press Enter for all categories): ', async (category) => {
             const filter = category.trim() || null;
+
+            console.log('\n📊 Starting parser...');
+            console.log(`URL: ${url}`);
+            console.log(`Category filter: ${filter || 'All categories'}`);
+            console.log('-------------------\n');
+
             const result = await parseFunpay(url, filter);
 
             if (result.success) {
-                console.log(`\n✅ Done! ${result.count} offers`);
+                console.log(`\n✅ Parsing completed successfully!`);
+                console.log(`📁 File: ${result.filePath}`);
+                console.log(`📊 Total offers: ${result.count}`);
+            } else {
+                console.log(`\n❌ Parsing failed!`);
+                if (result.error) {
+                    console.log(`Error: ${result.error}`);
+                }
             }
 
-            rl.question('\nContinue? (y/n): ', (answer) => {
-                if (answer.toLowerCase() === 'y') {
+            rl.question('\nDo you want to parse another profile? (y/n): ', (answer) => {
+                if (answer.toLowerCase() === 'y' || answer.toLowerCase() === 'yes') {
                     prompt();
                 } else {
+                    console.log('Goodbye!');
                     rl.close();
                 }
             });
@@ -440,5 +655,11 @@ function prompt() {
     });
 }
 
-console.log('=== FunPay Parser (RU/EN) ===\n');
+// Запуск программы
+console.log('=================================');
+console.log('   FunPay Parser (RU/EN) v2.0   ');
+console.log('=================================');
+console.log('This parser extracts offers in both Russian and English');
+console.log('with automatic language and currency switching.\n');
+
 prompt();
